@@ -1,6 +1,8 @@
 go-wrk - an HTTP benchmarking tool
 ==================================
 
+This repo is forked from https://github.com/tsliwowicz/go-wrk
+
 go-wrk is a modern HTTP benchmarking tool capable of generating significant load when run on a single multi-core CPU. It builds on go language go routines and scheduler for behind the scenes async IO and concurrency.
 
 It was created mostly to examine go language (http://golang.org) performance and verbosity compared to C (the language wrk was written in. See - <https://github.com/wg/wrk>).  
