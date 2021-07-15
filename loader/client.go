@@ -74,7 +74,7 @@ func client(disableCompression, disableKeepAlive, skipVerify bool, timeoutms int
 	}
 
 	dc := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, network, serverAddr)
+		return (&net.Dialer{Timeout: 20 * time.Second}).DialContext(ctx, network, serverAddr)
 	}
 	t.DialContext = dc
 

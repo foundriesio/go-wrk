@@ -140,7 +140,7 @@ func main() {
 
 	loadGen.ServerAddr =  serverAddr
 
-	fileQueue := make(chan string, 10000)
+	fileQueue := make(chan string, goroutines)
 
 	go func() {
 		f, err := os.Open(urlFile)
