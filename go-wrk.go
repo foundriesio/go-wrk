@@ -185,7 +185,7 @@ func main() {
 			aggStats.MaxRequestTime = util.MaxDuration(aggStats.MaxRequestTime, stats.MaxRequestTime)
 			aggStats.MinRequestTime = util.MinDuration(aggStats.MinRequestTime, stats.MinRequestTime)
 			responders++
-			fmt.Printf(">>>>> Processed %d\n", responders)
+			fmt.Printf(">>>>> Processed %d\n", aggStats.NumRequests)
 		}
 	}
 

@@ -147,6 +147,10 @@ func DoRequest(httpClient *http.Client, header map[string]string, method, host, 
 		fmt.Println("empty response")
 		return
 	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Received non 200 response: %s\n\n", resp.Status)
+		return
+	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
 			resp.Body.Close()
