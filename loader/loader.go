@@ -38,6 +38,8 @@ type LoadCfg struct {
 	clientKey          string
 	caCert             string
 	http2              bool
+	ServerAddr         string
+	UrlQueue           <-chan string
 }
 
 // RequesterStats used for colelcting aggregate statistics
@@ -68,7 +70,7 @@ func NewLoadCfg(duration int, //seconds
 	caCert string,
 	http2 bool) (rt *LoadCfg) {
 	rt = &LoadCfg{duration, goroutines, testUrl, reqBody, method, host, header, statsAggregator, timeoutms,
-		allowRedirects, disableCompression, disableKeepAlive, skipVerify, 0, clientCert, clientKey, caCert, http2}
+		allowRedirects, disableCompression, disableKeepAlive, skipVerify, 0, clientCert, clientKey, caCert, http2, "", nil}
 	return
 }
 
@@ -171,16 +173,22 @@ func DoRequest(httpClient *http.Client, header map[string]string, method, host, 
 //When it is done, it sends the results using the statsAggregator channel
 func (cfg *LoadCfg) RunSingleLoadSession() {
 	stats := &RequesterStats{MinRequestTime: time.Minute}
-	start := time.Now()
+	//start := time.Now()
 
 	httpClient, err := client(cfg.disableCompression, cfg.disableKeepAlive, cfg.skipVerify, 
-		cfg.timeoutms, cfg.allowRedirects, cfg.clientCert, cfg.clientKey, cfg.caCert, cfg.http2)
+		cfg.timeoutms, cfg.allowRedirects, cfg.clientCert, cfg.clientKey, cfg.caCert, cfg.http2, cfg.ServerAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for time.Since(start).Seconds() <= float64(cfg.duration) && atomic.LoadInt32(&cfg.interrupted) == 0 {
-		respSize, reqDur := DoRequest(httpClient, cfg.header, cfg.method, cfg.host, cfg.testUrl, cfg.reqBody)
+	//for time.Since(start).Seconds() <= float64(cfg.duration) && atomic.LoadInt32(&cfg.interrupted) == 0 {
+	for fetchUrl := range cfg.UrlQueue {
+		if 1 == atomic.LoadInt32(&cfg.interrupted) {
+			return
+		}
+		//fmt.Printf(">>>>> %s\n", fetchUrl)
+		//respSize, reqDur := DoRequest(httpClient, cfg.header, cfg.method, cfg.host, cfg.testUrl, cfg.reqBody)
+		respSize, reqDur := DoRequest(httpClient, cfg.header, cfg.method, cfg.host, fetchUrl, cfg.reqBody)
 		if respSize > 0 {
 			stats.TotRespSize += int64(respSize)
 			stats.TotDuration += reqDur

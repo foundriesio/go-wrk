@@ -1,9 +1,11 @@
 package loader
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"io/ioutil"
+	"net"
 	"net/http"
 
 	"fmt"
@@ -13,7 +15,7 @@ import (
 	"github.com/tsliwowicz/go-wrk/util"
 )
 
-func client(disableCompression, disableKeepAlive, skipVerify bool, timeoutms int, allowRedirects bool, clientCert, clientKey, caCert string, usehttp2 bool) (*http.Client, error) {
+func client(disableCompression, disableKeepAlive, skipVerify bool, timeoutms int, allowRedirects bool, clientCert, clientKey, caCert string, usehttp2 bool, serverAddr string) (*http.Client, error) {
 
 	client := &http.Client{}
 	//overriding the default parameters
@@ -70,6 +72,12 @@ func client(disableCompression, disableKeepAlive, skipVerify bool, timeoutms int
 	if usehttp2 {
 		http2.ConfigureTransport(t)
 	}
+
+	dc := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, network, serverAddr)
+	}
+	t.DialContext = dc
+
 	client.Transport = t
 	return client, nil
 }

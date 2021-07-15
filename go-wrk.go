@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -8,6 +9,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tsliwowicz/go-wrk/loader"
@@ -38,6 +40,9 @@ var clientCert string
 var clientKey string
 var caCert string
 var http2 bool
+var baseUrl string
+var urlFile string
+var serverAddr string
 
 func init() {
 	flag.BoolVar(&versionFlag, "v", false, "Print version details")
@@ -58,6 +63,9 @@ func init() {
 	flag.StringVar(&clientKey, "key", "", "Private key file name (SSL/TLS")
 	flag.StringVar(&caCert, "ca", "", "CA file to verify peer against (SSL/TLS)")
 	flag.BoolVar(&http2, "http", true, "Use HTTP/2")
+	flag.StringVar(&baseUrl, "baseurl", "", "A base URL of the items to be fetched")
+	flag.StringVar(&urlFile, "url-file", "", "A path to a file with a list of URLs to fetch")
+	flag.StringVar(&serverAddr, "server-addr", "<ip:port>", "An ip address and port of the server to fetch from")
 }
 
 //printDefaults a nicer format for the defaults
@@ -71,12 +79,12 @@ func printDefaults() {
 
 func main() {
 	//raising the limits. Some performance gains were achieved with the + goroutines (not a lot).
-	runtime.GOMAXPROCS(runtime.NumCPU() + goroutines)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	statsAggregator = make(chan *loader.RequesterStats, goroutines)
 	sigChan := make(chan os.Signal, 1)
 
-	signal.Notify(sigChan, os.Interrupt)
+	signal.Notify(sigChan, os.Interrupt, os.Kill, syscall.SIGQUIT)
 
 	flag.Parse() // Scan the arguments list
 	header = make(map[string]string)
@@ -102,6 +110,9 @@ func main() {
 		testUrl = string(url)
 	} else {
 		testUrl = flag.Arg(0)
+		if len(testUrl) == 0 {
+			testUrl = "foo"
+		}
 	}
 
 	if versionFlag {
@@ -127,6 +138,31 @@ func main() {
 	loadGen := loader.NewLoadCfg(duration, goroutines, testUrl, reqBody, method, host, header, statsAggregator, timeoutms,
 		allowRedirectsFlag, disableCompression, disableKeepAlive, skipVerify, clientCert, clientKey, caCert, http2)
 
+	loadGen.ServerAddr =  serverAddr
+
+	fileQueue := make(chan string, 10000)
+
+	go func() {
+		f, err := os.Open(urlFile)
+		if err != nil {
+			fmt.Printf("Failed to open file with list of files to fetch: %s\n", err.Error())
+			os.Exit(1)
+		}
+		defer f.Close()
+		defer close(fileQueue)
+
+		scan := bufio.NewScanner(f)
+		for scan.Scan() {
+			fp := baseUrl + scan.Text()
+			fileQueue <- fp
+		}
+		if err := scan.Err(); err != nil {
+			fmt.Printf("Failed to read file with list of files to fetch: %s\n", err.Error())
+			os.Exit(1)
+		}
+	}()
+
+	loadGen.UrlQueue = fileQueue
 	for i := 0; i < goroutines; i++ {
 		go loadGen.RunSingleLoadSession()
 	}
@@ -138,6 +174,8 @@ func main() {
 		select {
 		case <-sigChan:
 			loadGen.Stop()
+			close(fileQueue)
+			close(statsAggregator)
 			fmt.Printf("stopping...\n")
 		case stats := <-statsAggregator:
 			aggStats.NumErrs += stats.NumErrs
@@ -147,6 +185,7 @@ func main() {
 			aggStats.MaxRequestTime = util.MaxDuration(aggStats.MaxRequestTime, stats.MaxRequestTime)
 			aggStats.MinRequestTime = util.MinDuration(aggStats.MinRequestTime, stats.MinRequestTime)
 			responders++
+			fmt.Printf(">>>>> Processed %d\n", responders)
 		}
 	}
 
