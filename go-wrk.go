@@ -43,6 +43,7 @@ var http2 bool
 var baseUrl string
 var urlFile string
 var serverAddr string
+var repeatNumb int
 
 func init() {
 	flag.BoolVar(&versionFlag, "v", false, "Print version details")
@@ -66,6 +67,7 @@ func init() {
 	flag.StringVar(&baseUrl, "baseurl", "", "A base URL of the items to be fetched")
 	flag.StringVar(&urlFile, "url-file", "", "A path to a file with a list of URLs to fetch")
 	flag.StringVar(&serverAddr, "server-addr", "<ip:port>", "An ip address and port of the server to fetch from")
+	flag.IntVar(&repeatNumb, "repeat-numb", 1, "Number of overall fetch sessions")
 }
 
 //printDefaults a nicer format for the defaults
@@ -143,22 +145,24 @@ func main() {
 	fileQueue := make(chan string, goroutines)
 
 	go func() {
-		f, err := os.Open(urlFile)
-		if err != nil {
-			fmt.Printf("Failed to open file with list of files to fetch: %s\n", err.Error())
-			os.Exit(1)
-		}
-		defer f.Close()
 		defer close(fileQueue)
+		for ii :=0; ii < repeatNumb; ii++ {
+			f, err := os.Open(urlFile)
+			if err != nil {
+				fmt.Printf("Failed to open file with list of files to fetch: %s\n", err.Error())
+				os.Exit(1)
+			}
+			defer f.Close()
 
-		scan := bufio.NewScanner(f)
-		for scan.Scan() {
-			fp := baseUrl + scan.Text()
-			fileQueue <- fp
-		}
-		if err := scan.Err(); err != nil {
-			fmt.Printf("Failed to read file with list of files to fetch: %s\n", err.Error())
-			os.Exit(1)
+			scan := bufio.NewScanner(f)
+			for scan.Scan() {
+				fp := baseUrl + scan.Text()
+				fileQueue <- fp
+			}
+			if err := scan.Err(); err != nil {
+				fmt.Printf("Failed to read file with list of files to fetch: %s\n", err.Error())
+				os.Exit(1)
+			}
 		}
 	}()
 
