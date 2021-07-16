@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -166,45 +167,77 @@ func main() {
 		}
 	}()
 
+	var wg sync.WaitGroup
 	loadGen.UrlQueue = fileQueue
+	startTime := time.Now()
 	for i := 0; i < goroutines; i++ {
-		go loadGen.RunSingleLoadSession()
+		wg.Add(1)
+		go loadGen.RunSingleLoadSession(&wg)
 	}
 
 	responders := 0
 	aggStats := loader.RequesterStats{MinRequestTime: time.Minute}
 
-	for responders < goroutines {
-		select {
-		case <-sigChan:
-			loadGen.Stop()
-			close(fileQueue)
-			close(statsAggregator)
-			fmt.Printf("stopping...\n")
-		case stats := <-statsAggregator:
-			aggStats.NumErrs += stats.NumErrs
-			aggStats.NumRequests += stats.NumRequests
-			aggStats.TotRespSize += stats.TotRespSize
-			aggStats.TotDuration += stats.TotDuration
-			aggStats.MaxRequestTime = util.MaxDuration(aggStats.MaxRequestTime, stats.MaxRequestTime)
-			aggStats.MinRequestTime = util.MinDuration(aggStats.MinRequestTime, stats.MinRequestTime)
-			responders++
-			fmt.Printf(">>>>> Processed %d\n", aggStats.NumRequests)
-		}
-	}
+	doneCh := make(chan int)
+	go func() {
+		for {
+			select {
+			case <-sigChan:
+				loadGen.Stop()
+				close(fileQueue)
+				close(statsAggregator)
+				doneCh <- 1
+				fmt.Printf("stopping...\n")
+			case stats, ok := <-statsAggregator:
+				if !ok {
+					doneCh <- 1
+					return
+				}
+				aggStats.NumErrs += stats.NumErrs
+				aggStats.NumRequests += stats.NumRequests
+				aggStats.TotRespSize += stats.TotRespSize
+				aggStats.TotDuration += stats.TotDuration
+				aggStats.MaxRequestTime = util.MaxDuration(aggStats.MaxRequestTime, stats.MaxRequestTime)
+				aggStats.MinRequestTime = util.MinDuration(aggStats.MinRequestTime, stats.MinRequestTime)
+				responders++
+				fmt.Printf("Processed: %d\r", aggStats.NumRequests)
 
+				if stats.NumErrs > 0 && len(stats.ErrUrl) > 0 {
+					fmt.Printf(">> Failed URL: %s; err: %s\n", stats.ErrUrl, stats.ErrStr)
+				} else {
+					aggStats.TotReqPerSec += 1/stats.TotDuration.Seconds()
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(statsAggregator)
+	<-doneCh
+
+	totalDuration := time.Since(startTime)
 	if aggStats.NumRequests == 0 {
 		fmt.Println("Error: No statistics collected / no requests found\n")
 		return
 	}
 
-	avgThreadDur := aggStats.TotDuration / time.Duration(responders) //need to average the aggregated duration
+	//avgThreadDur := aggStats.TotDuration / time.Duration(responders) //need to average the aggregated duration
 
-	reqRate := float64(aggStats.NumRequests) / avgThreadDur.Seconds()
-	avgReqTime := aggStats.TotDuration / time.Duration(aggStats.NumRequests)
-	bytesRate := float64(aggStats.TotRespSize) / avgThreadDur.Seconds()
-	fmt.Printf("%v requests in %v, %v read\n", aggStats.NumRequests, avgThreadDur, util.ByteSize{float64(aggStats.TotRespSize)})
-	fmt.Printf("Requests/sec:\t\t%.2f\nTransfer/sec:\t\t%v\nAvg Req Time:\t\t%v\n", reqRate, util.ByteSize{bytesRate}, avgReqTime)
+	reqRate := float64(aggStats.NumRequests) / totalDuration.Seconds()
+	//avgReqTime := aggStats.TotDuration / time.Duration(aggStats.NumRequests)
+	//bytesRate := float64(aggStats.TotRespSize) / avgThreadDur.Seconds()
+	//bytesRate := float64(aggStats.TotRespSize)/aggStats.TotDuration.Seconds()
+	bytesRate := float64(aggStats.TotRespSize)/totalDuration.Seconds()
+	bytesRateAvg := float64(aggStats.TotRespSize)/aggStats.TotDuration.Seconds()
+
+	fmt.Printf("%v requests in %v, %v read\n", aggStats.NumRequests, totalDuration, util.ByteSize{float64(aggStats.TotRespSize)})
+	fmt.Printf("Requests/sec:\t\t%.2f\n", reqRate)
+	fmt.Printf("Avg Reqs/sec:\t\t%.2f\n", aggStats.TotReqPerSec/float64(aggStats.NumRequests))
+	fmt.Printf("Bytes/sec:\t\t%v\n", util.ByteSize{bytesRate})
+	fmt.Printf("Avg B/sec:\t\t%v\n", util.ByteSize{bytesRateAvg})
+
+
+	//fmt.Printf("Requests/sec:\t\t%.2f\nTransfer/sec:\t\t%v\nAvg Req Time:\t\t%v\n", reqRate, util.ByteSize{bytesRate}, avgReqTime)
 	fmt.Printf("Fastest Request:\t%v\n", aggStats.MinRequestTime)
 	fmt.Printf("Slowest Request:\t%v\n", aggStats.MaxRequestTime)
 	fmt.Printf("Number of Errors:\t%v\n", aggStats.NumErrs)

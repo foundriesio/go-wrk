@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -48,8 +49,11 @@ type RequesterStats struct {
 	TotDuration    time.Duration
 	MinRequestTime time.Duration
 	MaxRequestTime time.Duration
+	TotReqPerSec   float64
 	NumRequests    int
 	NumErrs        int
+	ErrUrl         string
+	ErrStr         string
 }
 
 func NewLoadCfg(duration int, //seconds
@@ -105,9 +109,10 @@ func escapeUrlStr(in string) string {
 
 //DoRequest single request implementation. Returns the size of the response and its duration
 //On error - returns -1 on both
-func DoRequest(httpClient *http.Client, header map[string]string, method, host, loadUrl, reqBody string) (respSize int, duration time.Duration) {
+func DoRequest(httpClient *http.Client, header map[string]string, method, host, loadUrl, reqBody string) (respSize int, duration time.Duration, errStatus string) {
 	respSize = -1
 	duration = -1
+	errStatus = ""
 
 	loadUrl = escapeUrlStr(loadUrl)
 
@@ -149,7 +154,7 @@ func DoRequest(httpClient *http.Client, header map[string]string, method, host, 
 	}
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("Received non 200 response: %s\n\n", resp.Status)
-		return
+		return respSize, duration, resp.Status
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -175,8 +180,9 @@ func DoRequest(httpClient *http.Client, header map[string]string, method, host, 
 
 //Requester a go function for repeatedly making requests and aggregating statistics as long as required
 //When it is done, it sends the results using the statsAggregator channel
-func (cfg *LoadCfg) RunSingleLoadSession() {
-	stats := &RequesterStats{MinRequestTime: time.Minute}
+func (cfg *LoadCfg) RunSingleLoadSession(wg *sync.WaitGroup) {
+	defer wg.Done()
+	//stats := &RequesterStats{MinRequestTime: time.Minute}
 	//start := time.Now()
 
 	httpClient, err := client(cfg.disableCompression, cfg.disableKeepAlive, cfg.skipVerify, 
@@ -190,20 +196,23 @@ func (cfg *LoadCfg) RunSingleLoadSession() {
 		if 1 == atomic.LoadInt32(&cfg.interrupted) {
 			return
 		}
+		stats := &RequesterStats{MinRequestTime: time.Minute}
 		//fmt.Printf(">>>>> %s\n", fetchUrl)
 		//respSize, reqDur := DoRequest(httpClient, cfg.header, cfg.method, cfg.host, cfg.testUrl, cfg.reqBody)
-		respSize, reqDur := DoRequest(httpClient, cfg.header, cfg.method, cfg.host, fetchUrl, cfg.reqBody)
+		respSize, reqDur, errStr := DoRequest(httpClient, cfg.header, cfg.method, cfg.host, fetchUrl, cfg.reqBody)
 		if respSize > 0 {
 			stats.TotRespSize += int64(respSize)
 			stats.TotDuration += reqDur
-			stats.MaxRequestTime = util.MaxDuration(reqDur, stats.MaxRequestTime)
-			stats.MinRequestTime = util.MinDuration(reqDur, stats.MinRequestTime)
+			stats.MaxRequestTime = reqDur
+			stats.MinRequestTime = reqDur
 			stats.NumRequests++
 		} else {
 			stats.NumErrs++
+			stats.ErrUrl = fetchUrl
+			stats.ErrStr = errStr
 		}
+		cfg.statsAggregator <- stats
 	}
-	cfg.statsAggregator <- stats
 }
 
 func (cfg *LoadCfg) Stop() {
