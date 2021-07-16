@@ -55,7 +55,7 @@ func init() {
 	flag.BoolVar(&skipVerify, "no-vr", false, "Skip verifying SSL certificate of the server")
 	flag.IntVar(&goroutines, "c", 10, "Number of goroutines to use (concurrent connections)")
 	flag.IntVar(&duration, "d", 10, "Duration of test in seconds")
-	flag.IntVar(&timeoutms, "T", 1000, "Socket/request timeout in ms")
+	flag.IntVar(&timeoutms, "T", 2000, "Socket/request timeout in ms")
 	flag.StringVar(&method, "M", "GET", "HTTP method")
 	flag.StringVar(&host, "host", "", "Host Header")
 	flag.Var(&headerFlags, "H", "Header to add to each request (you can define multiple -H flags)")
