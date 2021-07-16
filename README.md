@@ -1,7 +1,25 @@
 go-wrk - an HTTP benchmarking tool
 ==================================
 
+Foundries notes
+---------------
 This repo is forked from https://github.com/tsliwowicz/go-wrk
+
+Build container
+```
+docker build -t fio/wrk .
+```
+
+Load OSTreeProxy
+```
+docker run --rm -v ~/<device-cert-folder>:/device -v /<url-list-file>:/objects.list fio/wrk go-wrk -c <goroutine number> -ca /device/root.crt -cert /device/client.pem -key /device/pkey.pem -baseurl <ostree_server-base-url-from-sota.toml> -url-file /objects.list -server-addr <ostree-proxy-IP:port> -repeat-numb <N>
+```
+
+Load GCS
+```
+docker run --rm -v /<url-list-file>:/objects.list fio/wrk go-wrk -H "Authorization: Bearer ${OAUTH_TOKEN}" -c <goroutine number> -baseurl https://storage.googleapis.com/<bucket>/<factory-prefix>/ -url-file /objects.list -repeat-numb <N>
+```
+
 
 go-wrk is a modern HTTP benchmarking tool capable of generating significant load when run on a single multi-core CPU. It builds on go language go routines and scheduler for behind the scenes async IO and concurrency.
 
