@@ -168,6 +168,7 @@ func DoRequest(httpClient *http.Client, header map[string]string, method, host, 
 	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
 		duration = time.Since(start)
 		respSize = len(body) + int(util.EstimateHttpHeadersSize(resp.Header))
+		//fmt.Println(string(body))
 	} else if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusTemporaryRedirect {
 		duration = time.Since(start)
 		respSize = int(resp.ContentLength) + int(util.EstimateHttpHeadersSize(resp.Header))

@@ -43,6 +43,8 @@ var caCert string
 var http2 bool
 var baseUrl string
 var urlFile string
+var fullUrl string
+var requestNumb int
 var serverAddr string
 var repeatNumb int
 
@@ -64,11 +66,13 @@ func init() {
 	flag.StringVar(&clientCert, "cert", "", "CA certificate file to verify peer against (SSL/TLS)")
 	flag.StringVar(&clientKey, "key", "", "Private key file name (SSL/TLS")
 	flag.StringVar(&caCert, "ca", "", "CA file to verify peer against (SSL/TLS)")
-	flag.BoolVar(&http2, "http", true, "Use HTTP/2")
+	flag.BoolVar(&http2, "http", false, "Use HTTP/2")
 	flag.StringVar(&baseUrl, "baseurl", "", "A base URL of the items to be fetched")
 	flag.StringVar(&urlFile, "url-file", "", "A path to a file with a list of URLs to fetch")
+	flag.StringVar(&fullUrl, "full-url", "", "A full URL of the item to be fetched")
 	flag.StringVar(&serverAddr, "server-addr", "<ip:port>", "An ip address and port of the server to fetch from")
 	flag.IntVar(&repeatNumb, "repeat-numb", 1, "Number of overall fetch sessions")
+	flag.IntVar(&requestNumb, "request-numb", 1, "Number of requests for full URL per session")
 }
 
 //printDefaults a nicer format for the defaults
@@ -148,21 +152,26 @@ func main() {
 	go func() {
 		defer close(fileQueue)
 		for ii :=0; ii < repeatNumb; ii++ {
-			f, err := os.Open(urlFile)
-			if err != nil {
-				fmt.Printf("Failed to open file with list of files to fetch: %s\n", err.Error())
-				os.Exit(1)
-			}
-			defer f.Close()
-
-			scan := bufio.NewScanner(f)
-			for scan.Scan() {
-				fp := baseUrl + scan.Text()
-				fileQueue <- fp
-			}
-			if err := scan.Err(); err != nil {
-				fmt.Printf("Failed to read file with list of files to fetch: %s\n", err.Error())
-				os.Exit(1)
+			if len(urlFile) > 0 {
+				f, err := os.Open(urlFile)
+				if err != nil {
+					fmt.Printf("Failed to open file with list of files to fetch: %s\n", err.Error())
+					os.Exit(1)
+				}
+				scan := bufio.NewScanner(f)
+				for scan.Scan() {
+					fp := baseUrl + scan.Text()
+					fileQueue <- fp
+				}
+				if err := scan.Err(); err != nil {
+					fmt.Printf("Failed to read file with list of files to fetch: %s\n", err.Error())
+					os.Exit(1)
+				}
+				f.Close()
+			} else {
+				for ii := 0; ii < requestNumb; ii++ {
+					fileQueue <- fullUrl
+				}
 			}
 		}
 	}()
